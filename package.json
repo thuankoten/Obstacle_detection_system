@@ -1,0 +1,15 @@
+{
+  "name": "obstacle-detection-monorepo",
+  "private": true,
+  "devDependencies": {
+    "concurrently": "9.1.0"
+  },
+  "scripts": {
+    "setup:backend": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"python -m venv backend\\.venv; backend\\.venv\\Scripts\\python.exe -m pip install --upgrade pip; backend\\.venv\\Scripts\\python.exe -m pip install -r backend\\requirements.txt\"",
+    "setup:frontend": "npm --prefix frontend install",
+    "setup": "npm run setup:backend && npm run setup:frontend",
+    "dev:backend": "backend\\.venv\\Scripts\\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "concurrently -k -n backend,frontend -c cyan,green \"npm run dev:backend\" \"npm run dev:frontend\""
+  }
+}
