@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
+from typing import Callable, Optional
 
 import cv2
 import numpy as np
@@ -21,6 +22,8 @@ class AnalyzeConfig:
     min_contour_area: int = 800
     resize_width: int = 640
     confidence_threshold: float = 0.5  # Minimum confidence for YOLO detections
+    roi_warning_y_ratio: float = 0.65
+    roi_danger_y_ratio: float = 0.80
     # Classes considered as obstacles (COCO dataset class IDs)
     # 0: person, 1: bicycle, 2: car, 3: motorcycle, 5: bus, 7: truck, 
     # 9: traffic light, 11: stop sign, 16: dog, 17: cat
@@ -156,8 +159,28 @@ def _get_obstacle_color(class_name: str) -> tuple:
     return OBSTACLE_COLORS.get(class_name, OBSTACLE_COLORS["default"])
 
 
-def annotate_video(input_path: str, output_path: str, cfg: AnalyzeConfig) -> None:
-    """Process video and annotate with obstacle detections using YOLOv8"""
+def _risk_level_for_bbox(x: int, y: int, w: int, h: int, frame_h: int, cfg: AnalyzeConfig) -> tuple[str, str | None]:
+    bottom = y + h
+    if frame_h <= 0:
+        return "info", None
+
+    bottom_ratio = bottom / frame_h
+    if bottom_ratio >= cfg.roi_danger_y_ratio:
+        return "danger", "near_bottom"
+    if bottom_ratio >= cfg.roi_warning_y_ratio:
+        return "warning", "enter_roi"
+    return "info", None
+
+
+def annotate_video(
+    input_path: str,
+    output_path: str,
+    cfg: AnalyzeConfig,
+    progress_cb: Optional[Callable[[int, int | None, str | None], None]] = None,
+    events_out: Optional[list[dict[str, Any]]] = None,
+    snapshots_dir: str | None = None,
+) -> dict[str, Any]:
+    """Process video, annotate detections, and optionally emit events + snapshots."""
     if not os.path.exists(input_path):
         raise FileNotFoundError(input_path)
 
@@ -169,6 +192,8 @@ def annotate_video(input_path: str, output_path: str, cfg: AnalyzeConfig) -> Non
     if not fps or fps <= 0:
         fps = 25.0
 
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0) or None
+
     # For fallback mode
     backsub = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=16, detectShadows=True)
     
@@ -177,6 +202,7 @@ def annotate_video(input_path: str, output_path: str, cfg: AnalyzeConfig) -> Non
     writer: cv2.VideoWriter | None = None
     frame_index = -1
     last_detections: List[Dict[str, Any]] = []
+    wrote_snapshot_frames: set[int] = set()
 
     try:
         while True:
@@ -184,6 +210,9 @@ def annotate_video(input_path: str, output_path: str, cfg: AnalyzeConfig) -> Non
             if not ok:
                 break
             frame_index += 1
+
+            if progress_cb is not None:
+                progress_cb(frame_index + 1, frame_count, "Processing")
 
             frame = _resize_keep_aspect(frame, cfg.resize_width)
 
@@ -205,41 +234,68 @@ def annotate_video(input_path: str, output_path: str, cfg: AnalyzeConfig) -> Non
                 else:
                     last_detections = _detect_obstacles_basic(frame, cfg, backsub)
 
-            # Draw detections
+            # Draw detections + emit events
+            fh = frame.shape[0]
             for det in last_detections:
                 x, y, w, h = det["x"], det["y"], det["w"], det["h"]
                 class_name = det["class_name"]
                 conf = det["confidence"]
-                
-                color = _get_obstacle_color(class_name)
-                
-                # Draw bounding box
-                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                
-                # Draw label background
+
+                risk_level, reason = _risk_level_for_bbox(x, y, w, h, fh, cfg)
+
+                base_color = _get_obstacle_color(class_name)
+                border_color = base_color
+                if risk_level == "warning":
+                    border_color = (0, 255, 255)
+                elif risk_level == "danger":
+                    border_color = (0, 0, 255)
+
+                cv2.rectangle(frame, (x, y), (x + w, y + h), border_color, 2)
+
                 label = f"{class_name} {conf:.0%}"
-                (label_w, label_h), baseline = cv2.getTextSize(
-                    label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
-                )
+                if risk_level != "info":
+                    label = f"{risk_level.upper()} | {label}"
+
+                (label_w, label_h), _baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
                 cv2.rectangle(
-                    frame, 
-                    (x, max(0, y - label_h - 10)), 
-                    (x + label_w + 4, y), 
-                    color, 
-                    -1  # Filled
+                    frame,
+                    (x, max(0, y - label_h - 10)),
+                    (x + label_w + 4, y),
+                    border_color,
+                    -1,
                 )
-                
-                # Draw label text
                 cv2.putText(
                     frame,
                     label,
                     (x + 2, max(label_h, y - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
-                    (255, 255, 255),  # White text
+                    (255, 255, 255),
                     2,
                     cv2.LINE_AA,
                 )
+
+                if events_out is not None and risk_level in {"warning", "danger"}:
+                    ts_ms = int((frame_index / fps) * 1000) if fps and fps > 0 else 0
+                    snapshot_name = None
+                    if snapshots_dir is not None and frame_index not in wrote_snapshot_frames:
+                        snapshot_name = f"{frame_index:06d}.jpg"
+                        snapshot_path = os.path.join(snapshots_dir, snapshot_name)
+                        cv2.imwrite(snapshot_path, frame)
+                        wrote_snapshot_frames.add(frame_index)
+
+                    events_out.append(
+                        {
+                            "timestamp_ms": ts_ms,
+                            "frame_index": frame_index,
+                            "class_name": class_name,
+                            "confidence": conf,
+                            "bbox": {"x": x, "y": y, "w": w, "h": h},
+                            "risk_level": risk_level,
+                            "reason": reason,
+                            "snapshot": snapshot_name,
+                        }
+                    )
             
             # Draw detection mode indicator
             mode_text = "YOLO" if use_yolo else "Basic"
@@ -259,6 +315,15 @@ def annotate_video(input_path: str, output_path: str, cfg: AnalyzeConfig) -> Non
         cap.release()
         if writer is not None:
             writer.release()
+
+    if progress_cb is not None:
+        progress_cb(frame_count or (frame_index + 1), frame_count, "Done")
+
+    return {
+        "fps": float(fps) if fps and fps > 0 else None,
+        "frame_count": frame_count,
+        "detection_mode": "yolo" if use_yolo else "basic",
+    }
 
 
 def analyze_video(video_path: str, cfg: AnalyzeConfig) -> dict:
