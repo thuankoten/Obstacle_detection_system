@@ -14,6 +14,13 @@ export default function DetectionRealtimePage() {
 
   const [showNotes, setShowNotes] = useState(false);
 
+  const [laneEnabled, setLaneEnabled] = useState(true);
+  const [laneCenterX, setLaneCenterX] = useState(0.5);
+  const [laneTopY, setLaneTopY] = useState(0.55);
+  const [laneBottomY, setLaneBottomY] = useState(0.98);
+  const [laneTopW, setLaneTopW] = useState(0.25);
+  const [laneBottomW, setLaneBottomW] = useState(0.9);
+
   const [cameraIndex, setCameraIndex] = useState(0);
   const [sampleEveryN, setSampleEveryN] = useState(1);
   const [conf, setConf] = useState(0.5);
@@ -31,9 +38,15 @@ export default function DetectionRealtimePage() {
     u.searchParams.set('confidence_threshold', String(conf));
     u.searchParams.set('roi_warning_y_ratio', String(roiWarn));
     u.searchParams.set('roi_danger_y_ratio', String(roiDanger));
+    u.searchParams.set('lane_roi_enabled', String(laneEnabled));
+    u.searchParams.set('lane_roi_center_x_ratio', String(laneCenterX));
+    u.searchParams.set('lane_roi_top_y_ratio', String(laneTopY));
+    u.searchParams.set('lane_roi_bottom_y_ratio', String(laneBottomY));
+    u.searchParams.set('lane_roi_top_width_ratio', String(laneTopW));
+    u.searchParams.set('lane_roi_bottom_width_ratio', String(laneBottomW));
     u.searchParams.set('t', String(Date.now()));
     return u.toString();
-  }, [cameraIndex, conf, roiDanger, roiWarn, sampleEveryN]);
+  }, [cameraIndex, conf, laneBottomW, laneBottomY, laneCenterX, laneEnabled, laneTopW, laneTopY, roiDanger, roiWarn, sampleEveryN]);
 
   useEffect(() => {
     let ws;
@@ -43,7 +56,7 @@ export default function DetectionRealtimePage() {
       setError(null);
       setConnStatus('connecting');
 
-      const wsUrl = `${API_BASE.replace('http', 'ws')}/ws/realtime?src=${encodeURIComponent(String(cameraIndex))}&sampled_every_n_frames=${encodeURIComponent(String(sampleEveryN))}&confidence_threshold=${encodeURIComponent(String(conf))}&roi_warning_y_ratio=${encodeURIComponent(String(roiWarn))}&roi_danger_y_ratio=${encodeURIComponent(String(roiDanger))}`;
+      const wsUrl = `${API_BASE.replace('http', 'ws')}/ws/realtime?src=${encodeURIComponent(String(cameraIndex))}&sampled_every_n_frames=${encodeURIComponent(String(sampleEveryN))}&confidence_threshold=${encodeURIComponent(String(conf))}&roi_warning_y_ratio=${encodeURIComponent(String(roiWarn))}&roi_danger_y_ratio=${encodeURIComponent(String(roiDanger))}&lane_roi_enabled=${encodeURIComponent(String(laneEnabled))}&lane_roi_center_x_ratio=${encodeURIComponent(String(laneCenterX))}&lane_roi_top_y_ratio=${encodeURIComponent(String(laneTopY))}&lane_roi_bottom_y_ratio=${encodeURIComponent(String(laneBottomY))}&lane_roi_top_width_ratio=${encodeURIComponent(String(laneTopW))}&lane_roi_bottom_width_ratio=${encodeURIComponent(String(laneBottomW))}`;
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -81,7 +94,7 @@ export default function DetectionRealtimePage() {
         // ignore
       }
     };
-  }, [cameraIndex, conf, roiDanger, roiWarn, sampleEveryN]);
+  }, [cameraIndex, conf, laneBottomW, laneBottomY, laneCenterX, laneEnabled, laneTopW, laneTopY, roiDanger, roiWarn, sampleEveryN]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -119,16 +132,6 @@ export default function DetectionRealtimePage() {
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, bw, bh);
-
-        const label = `${risk.toUpperCase()} | ${d.class_name || 'obj'} ${(Math.round((d.confidence || 0) * 100))}%`;
-        ctx.font = '14px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-        const tw = ctx.measureText(label).width;
-        const th = 18;
-
-        ctx.fillStyle = color;
-        ctx.fillRect(x, Math.max(0, y - th), tw + 8, th);
-        ctx.fillStyle = '#0b1020';
-        ctx.fillText(label, x + 4, Math.max(14, y - 5));
       }
     };
 
@@ -168,6 +171,10 @@ export default function DetectionRealtimePage() {
             <div style={{ marginTop: 6 }}>
               <b>ROI danger y</b>: ngưỡng nguy hiểm (danger).
               Nếu đáy bbox vượt qua tỉ lệ này, hệ thống đánh dấu danger.
+            </div>
+            <div style={{ marginTop: 6 }}>
+              <b>Lane ROI (hình thang)</b>: chỉ giữ bbox/event nằm trong vùng hình thang phía trước xe.
+              Vật thể ở làn bên cạnh sẽ bị loại.
             </div>
           </div>
         )}
@@ -233,6 +240,86 @@ export default function DetectionRealtimePage() {
               step="0.01"
               value={roiDanger}
               onChange={(e) => setRoiDanger(Number(e.target.value || 0.8))}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </label>
+        </div>
+
+        <div className="row" style={{ marginTop: 12 }}>
+          <label style={{ opacity: 0.85 }}>
+            Lane ROI enabled
+            <select
+              className="input"
+              value={laneEnabled ? 'true' : 'false'}
+              onChange={(e) => setLaneEnabled(e.target.value === 'true')}
+              style={{ marginLeft: 8, width: 140 }}
+            >
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <label style={{ opacity: 0.85 }}>
+            Lane center x
+            <input
+              className="input"
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={laneCenterX}
+              onChange={(e) => setLaneCenterX(Number(e.target.value || 0.5))}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </label>
+          <label style={{ opacity: 0.85 }}>
+            Lane top y
+            <input
+              className="input"
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={laneTopY}
+              onChange={(e) => setLaneTopY(Number(e.target.value || 0.55))}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </label>
+          <label style={{ opacity: 0.85 }}>
+            Lane bottom y
+            <input
+              className="input"
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={laneBottomY}
+              onChange={(e) => setLaneBottomY(Number(e.target.value || 0.98))}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </label>
+          <label style={{ opacity: 0.85 }}>
+            Lane top width
+            <input
+              className="input"
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={laneTopW}
+              onChange={(e) => setLaneTopW(Number(e.target.value || 0.25))}
+              style={{ marginLeft: 8, width: 120 }}
+            />
+          </label>
+          <label style={{ opacity: 0.85 }}>
+            Lane bottom width
+            <input
+              className="input"
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={laneBottomW}
+              onChange={(e) => setLaneBottomW(Number(e.target.value || 0.9))}
               style={{ marginLeft: 8, width: 120 }}
             />
           </label>

@@ -2,7 +2,8 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
+  "/results/[resultId]": "pages/results/[resultId].js",
+  "/detection/realtime": "pages/detection/realtime.js",
   "/detection/video": "pages/detection/video.js",
-  "/": "pages/index.js",
-  "/detection/realtime": "pages/detection/realtime.js"
+  "/jobs/[jobId]": "pages/jobs/[jobId].js"
 }

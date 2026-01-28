@@ -44,6 +44,12 @@ async def create_job(
     confidence_threshold: float = Form(0.5),
     roi_warning_y_ratio: float = Form(0.65),
     roi_danger_y_ratio: float = Form(0.80),
+    lane_roi_enabled: bool = Form(False),
+    lane_roi_center_x_ratio: float = Form(0.50),
+    lane_roi_top_y_ratio: float = Form(0.55),
+    lane_roi_bottom_y_ratio: float = Form(0.98),
+    lane_roi_top_width_ratio: float = Form(0.25),
+    lane_roi_bottom_width_ratio: float = Form(0.90),
 ) -> JSONResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
@@ -68,6 +74,12 @@ async def create_job(
             confidence_threshold=float(confidence_threshold),
             roi_warning_y_ratio=float(roi_warning_y_ratio),
             roi_danger_y_ratio=float(roi_danger_y_ratio),
+            lane_roi_enabled=bool(lane_roi_enabled),
+            lane_roi_center_x_ratio=float(lane_roi_center_x_ratio),
+            lane_roi_top_y_ratio=float(lane_roi_top_y_ratio),
+            lane_roi_bottom_y_ratio=float(lane_roi_bottom_y_ratio),
+            lane_roi_top_width_ratio=float(lane_roi_top_width_ratio),
+            lane_roi_bottom_width_ratio=float(lane_roi_bottom_width_ratio),
         )
 
         start_job(
@@ -150,12 +162,24 @@ def realtime_stream(
     confidence_threshold: float = 0.5,
     roi_warning_y_ratio: float = 0.65,
     roi_danger_y_ratio: float = 0.80,
+    lane_roi_enabled: bool = False,
+    lane_roi_center_x_ratio: float = 0.50,
+    lane_roi_top_y_ratio: float = 0.55,
+    lane_roi_bottom_y_ratio: float = 0.98,
+    lane_roi_top_width_ratio: float = 0.25,
+    lane_roi_bottom_width_ratio: float = 0.90,
 ) -> StreamingResponse:
     cfg = AnalyzeConfig(
         sampled_every_n_frames=max(1, int(sampled_every_n_frames)),
         confidence_threshold=float(confidence_threshold),
         roi_warning_y_ratio=float(roi_warning_y_ratio),
         roi_danger_y_ratio=float(roi_danger_y_ratio),
+        lane_roi_enabled=bool(lane_roi_enabled),
+        lane_roi_center_x_ratio=float(lane_roi_center_x_ratio),
+        lane_roi_top_y_ratio=float(lane_roi_top_y_ratio),
+        lane_roi_bottom_y_ratio=float(lane_roi_bottom_y_ratio),
+        lane_roi_top_width_ratio=float(lane_roi_top_width_ratio),
+        lane_roi_bottom_width_ratio=float(lane_roi_bottom_width_ratio),
     )
     _REALTIME.configure(src=src, cfg=cfg)
     _REALTIME.acquire()
@@ -192,6 +216,12 @@ async def ws_realtime(
     confidence_threshold: float = 0.5,
     roi_warning_y_ratio: float = 0.65,
     roi_danger_y_ratio: float = 0.80,
+    lane_roi_enabled: bool = False,
+    lane_roi_center_x_ratio: float = 0.50,
+    lane_roi_top_y_ratio: float = 0.55,
+    lane_roi_bottom_y_ratio: float = 0.98,
+    lane_roi_top_width_ratio: float = 0.25,
+    lane_roi_bottom_width_ratio: float = 0.90,
 ):
     await websocket.accept()
 
@@ -200,6 +230,12 @@ async def ws_realtime(
         confidence_threshold=float(confidence_threshold),
         roi_warning_y_ratio=float(roi_warning_y_ratio),
         roi_danger_y_ratio=float(roi_danger_y_ratio),
+        lane_roi_enabled=bool(lane_roi_enabled),
+        lane_roi_center_x_ratio=float(lane_roi_center_x_ratio),
+        lane_roi_top_y_ratio=float(lane_roi_top_y_ratio),
+        lane_roi_bottom_y_ratio=float(lane_roi_bottom_y_ratio),
+        lane_roi_top_width_ratio=float(lane_roi_top_width_ratio),
+        lane_roi_bottom_width_ratio=float(lane_roi_bottom_width_ratio),
     )
 
     _REALTIME.configure(src=src, cfg=cfg)

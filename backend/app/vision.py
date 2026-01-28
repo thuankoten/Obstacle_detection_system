@@ -24,6 +24,12 @@ class AnalyzeConfig:
     confidence_threshold: float = 0.5  # Minimum confidence for YOLO detections
     roi_warning_y_ratio: float = 0.65
     roi_danger_y_ratio: float = 0.80
+    lane_roi_enabled: bool = False
+    lane_roi_center_x_ratio: float = 0.50
+    lane_roi_top_y_ratio: float = 0.55
+    lane_roi_bottom_y_ratio: float = 0.98
+    lane_roi_top_width_ratio: float = 0.25
+    lane_roi_bottom_width_ratio: float = 0.90
     # Classes considered as obstacles (COCO dataset class IDs)
     # 0: person, 1: bicycle, 2: car, 3: motorcycle, 5: bus, 7: truck, 
     # 9: traffic light, 11: stop sign, 16: dog, 17: cat
@@ -65,6 +71,53 @@ def _resize_keep_aspect(frame: np.ndarray, width: int) -> np.ndarray:
         return frame
     new_h = int(h * (width / w))
     return cv2.resize(frame, (width, new_h), interpolation=cv2.INTER_AREA)
+
+
+def _lane_roi_polygon(frame_w: int, frame_h: int, cfg: AnalyzeConfig) -> np.ndarray | None:
+    if not cfg.lane_roi_enabled:
+        return None
+    if frame_w <= 0 or frame_h <= 0:
+        return None
+
+    cx = float(cfg.lane_roi_center_x_ratio)
+    top_y = float(cfg.lane_roi_top_y_ratio)
+    bot_y = float(cfg.lane_roi_bottom_y_ratio)
+    top_w = float(cfg.lane_roi_top_width_ratio)
+    bot_w = float(cfg.lane_roi_bottom_width_ratio)
+
+    cx = max(0.0, min(1.0, cx))
+    top_y = max(0.0, min(1.0, top_y))
+    bot_y = max(0.0, min(1.0, bot_y))
+    top_w = max(0.0, min(1.0, top_w))
+    bot_w = max(0.0, min(1.0, bot_w))
+
+    if bot_y < top_y:
+        top_y, bot_y = bot_y, top_y
+
+    top_half = top_w / 2.0
+    bot_half = bot_w / 2.0
+
+    def clamp_x(x: float) -> float:
+        return max(0.0, min(1.0, x))
+
+    tl = (clamp_x(cx - top_half) * frame_w, top_y * frame_h)
+    tr = (clamp_x(cx + top_half) * frame_w, top_y * frame_h)
+    br = (clamp_x(cx + bot_half) * frame_w, bot_y * frame_h)
+    bl = (clamp_x(cx - bot_half) * frame_w, bot_y * frame_h)
+
+    poly = np.array([tl, tr, br, bl], dtype=np.float32)
+    return poly
+
+
+def _is_bbox_in_lane_roi(x: int, y: int, w: int, h: int, frame_w: int, frame_h: int, cfg: AnalyzeConfig) -> bool:
+    poly = _lane_roi_polygon(frame_w, frame_h, cfg)
+    if poly is None:
+        return True
+
+    px = float(x) + float(w) / 2.0
+    py = float(y) + float(h)
+    res = cv2.pointPolygonTest(poly, (px, py), False)
+    return res >= 0
 
 
 def _detect_obstacles_yolo(frame: np.ndarray, cfg: AnalyzeConfig) -> List[Dict[str, Any]]:
@@ -236,6 +289,23 @@ def annotate_video(
 
             # Draw detections + emit events
             fh = frame.shape[0]
+            fw = frame.shape[1]
+
+            if cfg.lane_roi_enabled:
+                last_detections = [
+                    d
+                    for d in last_detections
+                    if _is_bbox_in_lane_roi(
+                        int(d["x"]),
+                        int(d["y"]),
+                        int(d["w"]),
+                        int(d["h"]),
+                        int(fw),
+                        int(fh),
+                        cfg,
+                    )
+                ]
+
             for det in last_detections:
                 x, y, w, h = det["x"], det["y"], det["w"], det["h"]
                 class_name = det["class_name"]
@@ -251,29 +321,6 @@ def annotate_video(
                     border_color = (0, 0, 255)
 
                 cv2.rectangle(frame, (x, y), (x + w, y + h), border_color, 2)
-
-                label = f"{class_name} {conf:.0%}"
-                if risk_level != "info":
-                    label = f"{risk_level.upper()} | {label}"
-
-                (label_w, label_h), _baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                cv2.rectangle(
-                    frame,
-                    (x, max(0, y - label_h - 10)),
-                    (x + label_w + 4, y),
-                    border_color,
-                    -1,
-                )
-                cv2.putText(
-                    frame,
-                    label,
-                    (x + 2, max(label_h, y - 4)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (255, 255, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
 
                 if events_out is not None and risk_level in {"warning", "danger"}:
                     ts_ms = int((frame_index / fps) * 1000) if fps and fps > 0 else 0
@@ -296,19 +343,6 @@ def annotate_video(
                             "snapshot": snapshot_name,
                         }
                     )
-            
-            # Draw detection mode indicator
-            mode_text = "YOLO" if use_yolo else "Basic"
-            cv2.putText(
-                frame,
-                f"Mode: {mode_text} | Obstacles: {len(last_detections)}",
-                (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                2,
-                cv2.LINE_AA,
-            )
 
             writer.write(frame)
     finally:
@@ -359,6 +393,23 @@ def analyze_video(video_path: str, cfg: AnalyzeConfig) -> dict:
             detections = _detect_obstacles_yolo(frame, cfg)
         else:
             detections = _detect_obstacles_basic(frame, cfg, backsub)
+
+        if cfg.lane_roi_enabled:
+            fh = int(frame.shape[0])
+            fw = int(frame.shape[1])
+            detections = [
+                d
+                for d in detections
+                if _is_bbox_in_lane_roi(
+                    int(d["x"]),
+                    int(d["y"]),
+                    int(d["w"]),
+                    int(d["h"]),
+                    int(fw),
+                    int(fh),
+                    cfg,
+                )
+            ]
 
         timestamp_ms = 0
         if fps and fps > 0:
