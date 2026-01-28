@@ -13,6 +13,12 @@ export default function DetectionVideoPage() {
   const [conf, setConf] = useState(0.5);
   const [roiWarn, setRoiWarn] = useState(0.65);
   const [roiDanger, setRoiDanger] = useState(0.8);
+  const [laneEnabled, setLaneEnabled] = useState(true);
+  const [laneCenterX, setLaneCenterX] = useState(0.5);
+  const [laneTopY, setLaneTopY] = useState(0.55);
+  const [laneBottomY, setLaneBottomY] = useState(0.98);
+  const [laneTopW, setLaneTopW] = useState(0.25);
+  const [laneBottomW, setLaneBottomW] = useState(0.9);
 
   const videoUrl = useMemo(() => {
     if (!file) return null;
@@ -37,6 +43,12 @@ export default function DetectionVideoPage() {
       form.append('confidence_threshold', String(conf));
       form.append('roi_warning_y_ratio', String(roiWarn));
       form.append('roi_danger_y_ratio', String(roiDanger));
+      form.append('lane_roi_enabled', String(laneEnabled));
+      form.append('lane_roi_center_x_ratio', String(laneCenterX));
+      form.append('lane_roi_top_y_ratio', String(laneTopY));
+      form.append('lane_roi_bottom_y_ratio', String(laneBottomY));
+      form.append('lane_roi_top_width_ratio', String(laneTopW));
+      form.append('lane_roi_bottom_width_ratio', String(laneBottomW));
 
       const res = await fetch(`${API_BASE}/api/jobs`, {
         method: 'POST',
@@ -93,6 +105,10 @@ export default function DetectionVideoPage() {
             <div style={{ marginTop: 6 }}>
               <b>ROI danger y</b>: ngưỡng nguy hiểm (danger).
               Nếu đáy bbox vượt qua tỉ lệ này, hệ thống đánh dấu danger.
+            </div>
+            <div style={{ marginTop: 6 }}>
+              <b>Lane ROI (hình thang)</b>: chỉ giữ bbox/event nằm trong vùng hình thang phía trước xe.
+              Vật thể ở làn bên cạnh sẽ bị loại.
             </div>
           </div>
         )}
@@ -159,6 +175,86 @@ export default function DetectionVideoPage() {
                 step="0.01"
                 value={roiDanger}
                 onChange={(e) => setRoiDanger(Number(e.target.value || 0.8))}
+                style={{ marginLeft: 8, width: 120 }}
+              />
+            </label>
+          </div>
+
+          <div className="row" style={{ marginTop: 12 }}>
+            <label style={{ opacity: 0.85 }}>
+              Lane ROI enabled
+              <select
+                className="input"
+                value={laneEnabled ? 'true' : 'false'}
+                onChange={(e) => setLaneEnabled(e.target.value === 'true')}
+                style={{ marginLeft: 8, width: 140 }}
+              >
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+            <label style={{ opacity: 0.85 }}>
+              Lane center x
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={laneCenterX}
+                onChange={(e) => setLaneCenterX(Number(e.target.value || 0.5))}
+                style={{ marginLeft: 8, width: 120 }}
+              />
+            </label>
+            <label style={{ opacity: 0.85 }}>
+              Lane top y
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={laneTopY}
+                onChange={(e) => setLaneTopY(Number(e.target.value || 0.55))}
+                style={{ marginLeft: 8, width: 120 }}
+              />
+            </label>
+            <label style={{ opacity: 0.85 }}>
+              Lane bottom y
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={laneBottomY}
+                onChange={(e) => setLaneBottomY(Number(e.target.value || 0.98))}
+                style={{ marginLeft: 8, width: 120 }}
+              />
+            </label>
+            <label style={{ opacity: 0.85 }}>
+              Lane top width
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={laneTopW}
+                onChange={(e) => setLaneTopW(Number(e.target.value || 0.25))}
+                style={{ marginLeft: 8, width: 120 }}
+              />
+            </label>
+            <label style={{ opacity: 0.85 }}>
+              Lane bottom width
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.01"
+                value={laneBottomW}
+                onChange={(e) => setLaneBottomW(Number(e.target.value || 0.9))}
                 style={{ marginLeft: 8, width: 120 }}
               />
             </label>

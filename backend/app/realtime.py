@@ -7,7 +7,16 @@ from typing import Any, Optional
 
 import cv2
 
-from .vision import AnalyzeConfig, _detect_obstacles_basic, _detect_obstacles_yolo, _get_yolo_model, _resize_keep_aspect, _risk_level_for_bbox, YOLO_AVAILABLE
+from .vision import (
+    AnalyzeConfig,
+    YOLO_AVAILABLE,
+    _detect_obstacles_basic,
+    _detect_obstacles_yolo,
+    _get_yolo_model,
+    _is_bbox_in_lane_roi,
+    _resize_keep_aspect,
+    _risk_level_for_bbox,
+)
 
 
 @dataclass
@@ -137,9 +146,12 @@ class RealtimeService:
                     raw = _detect_obstacles_basic(frame, cfg, backsub)
 
                 fh = int(frame.shape[0])
+                fw = int(frame.shape[1])
                 enriched = []
                 for det in raw:
                     x, y, w, h = det['x'], det['y'], det['w'], det['h']
+                    if cfg.lane_roi_enabled and not _is_bbox_in_lane_roi(int(x), int(y), int(w), int(h), int(fw), int(fh), cfg):
+                        continue
                     risk_level, reason = _risk_level_for_bbox(x, y, w, h, fh, cfg)
                     enriched.append(
                         {

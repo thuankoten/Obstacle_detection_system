@@ -1,34 +1,26 @@
-# Obstacle Detection System 🚗
+# Obstacle Detection System 
 
-A local web app that lets you upload a driving video and returns an **annotated video** with **bounding boxes** for detected obstacles using **YOLOv8** deep learning model.
+A local web app for obstacle detection:
 
-## 🆕 New Features (YOLOv8 Upgrade)
+- **Detection Video**: upload a driving video, run analysis, and view results (annotated video + events)
+- **Detection Real Time**: run detection from a local camera/webcam stream (MJPEG + WebSocket)
 
-- **Deep Learning Detection**: Uses YOLOv8 for accurate obstacle detection
-- **Object Classification**: Identifies specific objects (car, person, truck, bus, motorcycle, bicycle, traffic light, stop sign, animals...)
-- **Confidence Score**: Shows detection confidence percentage
-- **Color-coded Boxes**: Different colors for different obstacle types
-- **Fallback Mode**: Automatically falls back to basic motion detection if YOLO unavailable
+## Features
+
+- **YOLOv8 detection** (with automatic fallback to basic motion detection if YOLO is unavailable)
+- **Annotated output video** with bounding boxes (no class/conf text overlay)
+- **Events** (warning/danger) with snapshots
+- **Lane ROI filtering (trapezoid)**: only keep detections/events inside the current lane area
+- **Realtime mode**: backend reads camera, frontend displays stream + bbox overlay
 
 ---
 
 ## Overview
 
-The app provides a simple end-to-end flow:
+This project is a monorepo:
 
-- Upload a video from the browser.
-- Backend (FastAPI) processes frames with OpenCV.
-- Backend generates a new video with overlays (yellow boxes + `obstacle` label).
-- Frontend (Next.js) previews the annotated video and allows download.
-
----
-
-## Features
-
-- **Video upload** from the web UI.
-- **Annotated output video (MP4)** returned by the API.
-- **Preview & download** annotated results in the browser.
-- Local development scripts to run backend + frontend together.
+- **Frontend**: Next.js (http://localhost:3000)
+- **Backend**: FastAPI (http://127.0.0.1:8000)
 
 ---
 
@@ -37,6 +29,7 @@ The app provides a simple end-to-end flow:
 - **Frontend**: Next.js (React)
 - **Backend**: FastAPI (Python)
 - **Computer Vision**: OpenCV
+- **Deep Learning**: Ultralytics YOLOv8 (Torch)
 - **Dev tooling**: concurrently (run FE/BE together)
 
 ---
@@ -47,8 +40,9 @@ The app provides a simple end-to-end flow:
 .
 ├─ backend/
 │  ├─ app/
-│  │  ├─ main.py            # FastAPI app (upload endpoint)
-│  │  └─ vision.py           # OpenCV pipeline + video annotation
+│  │  ├─ main.py            # FastAPI app (jobs + realtime endpoints)
+│  │  ├─ realtime.py        # Realtime service (camera capture + detection)
+│  │  └─ vision.py          # Video analysis + annotation
 │  └─ requirements.txt
 ├─ frontend/
 │  ├─ pages/                 # Next.js pages
@@ -65,9 +59,13 @@ The app provides a simple end-to-end flow:
 - **Node.js**: 18+ (recommended)
 - **OS**: Windows (tested), should work on Linux/macOS with minor command changes
 
+Optional:
+
+- **GPU**: NVIDIA GPU + CUDA can improve YOLO performance (not required)
+
 ---
 
-## Setup (Local)
+## Installation (Windows)
 
 From the repository root:
 
@@ -81,6 +79,19 @@ What `npm run setup` does:
 - Creates `backend/.venv`
 - Installs Python dependencies from `backend/requirements.txt`
 - Installs frontend dependencies in `frontend/`
+
+If you want to setup manually:
+
+```bash
+# Backend
+python -m venv backend/.venv
+backend\.venv\Scripts\activate
+pip install -r backend/requirements.txt
+
+# Frontend
+cd frontend
+npm install
+```
 
 ---
 
@@ -99,19 +110,42 @@ npm run dev
 
 ## Usage
 
-1.  Open http://localhost:3000
-2.  Choose a video file (`.mp4`, `.avi`, `.mov`, `.mkv`)
-3.  Click **Upload & Analyze**
-4.  Wait for processing, then preview / download the annotated video
+### 1) Detection Video
+
+1. Open http://localhost:3000
+2. Go to **Detection Video**
+3. Upload a video file (`.mp4`, `.avi`, `.mov`, `.mkv`)
+4. Configure parameters (sample rate / confidence / ROI thresholds / Lane ROI)
+5. Start analysis and wait for completion
+6. View the result video + events + snapshots
+
+### 2) Detection Real Time
+
+1. Go to **Detection Real Time**
+2. Select `Camera index` (usually 0)
+3. Adjust parameters + Lane ROI
+4. Watch realtime stream and bbox overlay
 
 ---
 
 ## API
 
-- **POST** `/api/upload`
+- **POST** `/api/jobs`
   - Content-Type: `multipart/form-data`
-  - Field: `file` (video)
-  - Response: `video/mp4` (annotated output)
+  - Fields:
+    - `file`: video
+    - `sampled_every_n_frames`, `confidence_threshold`, `roi_warning_y_ratio`, `roi_danger_y_ratio`
+    - `lane_roi_enabled`, `lane_roi_center_x_ratio`, `lane_roi_top_y_ratio`, `lane_roi_bottom_y_ratio`, `lane_roi_top_width_ratio`, `lane_roi_bottom_width_ratio`
+
+- **GET** `/api/jobs/{job_id}`
+  - Poll job status/progress
+
+- **GET** `/api/realtime/stream`
+  - MJPEG stream
+  - Query params match the same config fields (plus `src` for camera index)
+
+- **WS** `/ws/realtime`
+  - WebSocket stream of realtime detections/events
 
 ---
 
@@ -121,12 +155,6 @@ npm run dev
 
 - **Detectable Objects**: car, person, truck, bus, motorcycle, bicycle, traffic light, stop sign, dog, cat, horse, and more
 - **Confidence Threshold**: 50% (configurable)
-- **Color Coding**:
-  - 🟢 Green: person
-  - 🔴 Red: car, stop sign
-  - 🟣 Magenta: motorcycle
-  - 🟡 Yellow: traffic light
-  - 🔵 Cyan: bus, truck
 
 ### Basic Mode (Fallback)
 
@@ -140,6 +168,11 @@ If YOLO is unavailable, the system falls back to motion-based detection:
 
 ## Troubleshooting
 
+- **`npm run dev` fails**:
+  - Ensure `npm install` succeeded at repo root
+  - Ensure `npm run setup` completed (backend venv + requirements installed)
+  - Check ports `3000` and `8000` are free
+
 - **Push to GitHub failed because of large files**:
 
   - Do not commit `frontend/node_modules` or `backend/.venv`.
@@ -151,14 +184,6 @@ If YOLO is unavailable, the system falls back to motion-based detection:
 
 - **`Cannot open video`** when uploading:
   - Try a different video format/codec (e.g., MP4 H.264).
-
----
-
-## Roadmap (Ideas)
-
-- Better visualization (confidence, counts, timeline)
-- Export annotated frames / snapshots
-- Replace motion detection with a trained object detector (e.g., YOLO)
 
 ---
 
